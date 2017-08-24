@@ -1,4 +1,5 @@
 let request = require('request')
+let crypto = require('crypto')
 let log4js = require('log4js')
 let user = require('./sdk/user')
 let group = require('./sdk/group')
@@ -24,6 +25,7 @@ class YiBanSdk {
         this.access_token = null
         this.user_id = null
         this.expires = null
+        this.vq_info = null
     }
     /**
      * 跳转方式获取code 目前只适用于express
@@ -41,6 +43,36 @@ class YiBanSdk {
         if (req.query.code){this.code = req.query.code;logger.debug('Code saved')}
         if (!this.code){res.redirect(this.authorize_url)}
         if (callback){callback(this.code,this.authorize_url)}
+    }
+    /**
+     * 解密verify_request
+     * 
+     * @param {any} vq 
+     * @param {function(arg0: error,arg1: vq_info)} callback 
+     * @returns {string} decoded
+     * @memberof YiBanSdk
+     */
+    decryptoVerifyRequest(vq,callback){
+            let cryptkey = this.client_secret
+            let iv = this.client_id
+            let encryptdata = vq
+            let vq_info = null
+            let error = null
+            encryptdata = new Buffer(encryptdata, 'hex').toString('binary');
+            var decipher = crypto.createDecipheriv('aes-256-cbc', cryptkey, iv);
+            decipher.setAutoPadding(false)
+            var decoded  = decipher.update(encryptdata,'binary','utf8');
+            decoded += decipher.final('utf8');
+            decoded = decoded.split('\u0000')[0]
+            vq_info = JSON.parse(decoded)
+            this.vq_info = vq_info
+            if(!vq_info.visit_oauth){
+                error = 'oauth failed'
+            }else{
+                this.access_token = vq_info.visit_oauth.access_token
+            }
+            if(callback){callback(error,vq_info)}
+            return vq_info;
     }
     /**
      * 当跳转认证时，不必要显式传入code，第一个参数可以是callback
